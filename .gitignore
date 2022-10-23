@@ -1,4 +1,4 @@
 #Sequence files
 *.seqd
 #Config carpet
-config
+config/
