@@ -2,3 +2,5 @@
 *.seqd
 #Config carpet
 config/
+#Passports
+*.passport
