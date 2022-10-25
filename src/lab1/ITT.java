@@ -42,17 +42,17 @@ public class ITT extends LARVAFirstAgent {
         // storing much information about the real environment of the agent coming from 
         // the perceptions. See reference for the list of powerful methods
         this.setupEnvironment();
+        this.deactivateSequenceDiagrams();
         actions = new String[]{
             "LEFT",
             "RIGHT",
-            "MOVE",
-            "EXIT"};
+            "MOVE"};
         
         A = new DecisionSet();
         A.addChoice(new Choice("MOVE"));
         A.addChoice(new Choice("RIGHT"));
         A.addChoice(new Choice("LEFT"));
-        A.addChoice(new Choice("EXIT"));
+       // A.addChoice(new Choice("EXIT"));
     }
 
     @Override
@@ -178,7 +178,7 @@ public class ITT extends LARVAFirstAgent {
         }
       
         // Lanzamos los NPC
-        this.doPrepareNPC(4,DEST.class);
+     //   this.doPrepareNPC(4,DEST.class);
         
         // Vemos las misiones y seleccionamos la primera        
         outbox.setContent("Query missions session " + sessionKey);
@@ -192,7 +192,7 @@ public class ITT extends LARVAFirstAgent {
         
         return Status.SOLVEPROBLEM;
     }
-
+    
     // No autonomy. Just ask the user what to do next
     public Status MySolveProblem() {
         String currentGoal = E.getCurrentGoal();
@@ -225,7 +225,13 @@ public class ITT extends LARVAFirstAgent {
             this.myAssistedNavigation(ciudad[1]);
             if(G(E)){
                 Message("Done");
-                return Status.CLOSEPROBLEM;
+                E.getCurrentMission().nextGoal();
+                if(E.getCurrentMission().isOver()){
+                    return Status.CLOSEPROBLEM;
+                }else{
+                    return Status.SOLVEPROBLEM;
+                }
+                
             }
             if(!Ve(E)){
                 Alert("Ostia tio que no lo he enchufao");
@@ -242,7 +248,9 @@ public class ITT extends LARVAFirstAgent {
             return Status.SOLVEPROBLEM;
             
         }else if (currentGoal.startsWith("LIST")){
-            return doQueryPeople("jedis");
+            String[] datos = currentGoal.split(" ");
+            Info("tipo -> " + datos[1]);
+            return doQueryPeople(datos[1]);
             //return Status.CLOSEPROBLEM;
         }else if (currentGoal.startsWith("REPORT")){
             return Status.CLOSEPROBLEM;
@@ -308,7 +316,7 @@ public class ITT extends LARVAFirstAgent {
         Info(problemManager + " says: " + inbox.getContent());
         
         // Destruir NPCs
-        this.doDestroyNPC();
+       // this.doDestroyNPC();
         
         return Status.CHECKOUT;
     }
@@ -427,7 +435,7 @@ public class ITT extends LARVAFirstAgent {
         }
     }
     
-    /*protected String chooseMission(){
+    protected String chooseMission(){
         Info("Choosing a mission");
         String m = "";
         if( getEnvironment().getAllMissions().length == 1 ){
@@ -438,7 +446,7 @@ public class ITT extends LARVAFirstAgent {
         }
         Info("Selected mission " + m);
         return m;        
-    }*/
+    }
     
     protected Status doQueryPeople( String type ){
         Info("Querying people " + type);
@@ -449,7 +457,24 @@ public class ITT extends LARVAFirstAgent {
         getEnvironment().setExternalPerceptions(session.getContent());
         Message("Found " + getEnvironment().getPeople().length + " " + type +
                 " in " + getEnvironment().getCurrentCity());
-        return myStatus;
+        
+        E.getCurrentMission().nextGoal();
+        return Status.SOLVEPROBLEM;
+      /*  E.getCurrentMission().nextGoal();
+                if(E.getCurrentMission().isOver()){
+                    return Status.CLOSEPROBLEM;
+                }else{
+                    return Status.SOLVEPROBLEM;
+                }*/
+    }
+    
+    public Status SelectMission(){
+        String m = chooseMission();
+        if(m == null){
+            return Status.CLOSEPROBLEM;
+        }
+        getEnvironment().setCurrentMission(m);
+        return Status.SOLVEPROBLEM;
     }
 
 }
