@@ -18,43 +18,44 @@ public class ITT extends LARVAFirstAgent {
         START, CHECKIN, CHECKOUT, OPENPROBLEM, CLOSEPROBLEM, JOINSESSION, SOLVEPROBLEM, EXIT
     }
     protected Status myStatus;
-    protected String service = "PMANAGER", problem = "Dagobah.Apr1", // Dagobah.Apr1
+    protected String service = "PMANAGER", problem = "Dagobah.Sob1", // Dagobah.Apr1
             problemManager = "", content, sessionKey, sessionManager;
     protected String problems[], plan[], actions[];
     protected ACLMessage open, session;
     protected String[] contentTokens;
-    protected String actionString = "", preplan = "";
+    protected String action = "", preplan = "";
     protected int indexplan = 0, myEnergy = 0, indexSensor = 0;
     protected boolean showPerceptions = false, useAlias = false;
     protected String cities[];
     protected Point3D positions[];
     protected String mission;
     
-    Choice action;
-    
+    // Booleano para controlar a que ciudad ir (si tiene ruta o no)
+    protected boolean missionActive = true;
+
     @Override
     public void setup() {
         super.setup();
         showPerceptions = false;
         logger.onTabular();
         myStatus = Status.START;
-        // Thse brand-new agents have their own, powerful Environment, capable of
-        // storing much information about the real environment of the agent coming from 
-        // the perceptions. See reference for the list of powerful methods
         this.setupEnvironment();
-        this.deactivateSequenceDiagrams();
         actions = new String[]{
             "LEFT",
             "RIGHT",
-            "MOVE"};
+            "MOVE",
+            "EXIT"};
         
         A = new DecisionSet();
         A.addChoice(new Choice("MOVE"));
-        A.addChoice(new Choice("RIGHT"));
         A.addChoice(new Choice("LEFT"));
-       // A.addChoice(new Choice("EXIT"));
+        A.addChoice(new Choice("RIGHT"));
+        
+        // Desactivamos el sequence diagrams
+        this.deactivateSequenceDiagrams();
+        this.enableDeepLARVAMonitoring();
     }
-
+    
     @Override
     protected double U(Environment E, Choice a){
         if(a.getName().equals("MOVE")){
@@ -63,7 +64,7 @@ public class ITT extends LARVAFirstAgent {
             return U(S(S(E,a), new Choice("MOVE")));
         }
     }
-    
+
     // 99% Recycled from AgentLARVAFull
     @Override
     public void Execute() {
@@ -107,7 +108,6 @@ public class ITT extends LARVAFirstAgent {
     // 100% Reciclado de HelloWorld
     public Status MyCheckin() {
         Info("Loading passport and checking-in to LARVA");
-        //this.loadMyPassport("config/ANATOLI_GRISHENKO.passport");
         if (!doLARVACheckin()) {
             Error("Unable to checkin");
             return Status.EXIT;
@@ -165,10 +165,13 @@ public class ITT extends LARVAFirstAgent {
         session = this.LARVAblockingReceive();
         getEnvironment().setExternalPerceptions(session.getContent());
         
+        // Leemos las ciudades
+        cities = this.getEnvironment().getCityList();
+        Alert("Ciudades-> " + cities.length);
+        
         // Pedimos join session
         this.DFAddMyServices(new String[]{"TYPE ITT"});
         outbox = session.createReply();
-        //outbox.setContent("Request join session " + sessionKey + " in " + positions[0].toString());
         outbox.setContent("Request join session " + sessionKey + " in Dagobah");
         this.LARVAsend(outbox);
         session = this.LARVAblockingReceive();
@@ -176,9 +179,9 @@ public class ITT extends LARVAFirstAgent {
             Error("Could not join session " + sessionKey + " due to " + session.getContent());
             return Status.CLOSEPROBLEM;
         }
-      
+        
         // Lanzamos los NPC
-     //   this.doPrepareNPC(4,DEST.class);
+        this.doPrepareNPC(1,DEST.class);
         
         // Vemos las misiones y seleccionamos la primera        
         outbox.setContent("Query missions session " + sessionKey);
@@ -192,72 +195,65 @@ public class ITT extends LARVAFirstAgent {
         
         return Status.SOLVEPROBLEM;
     }
-    
-    // No autonomy. Just ask the user what to do next
-    public Status MySolveProblem() {
-        String currentGoal = E.getCurrentGoal();
-        if (currentGoal.startsWith("MOVEIN")){
-            String[] ciudad = currentGoal.split(" ");
-            Info("ciudad -> " + ciudad[1]);
-            
-            /*
-            this.MyReadPerceptions();
-            
-            if (plan == null) {
-                actionString = this.inputSelect("Please choose action: ", actions, actionString);
-                preplan += "\"" + action + "\",";
-            } else {
-                actionString = plan[indexplan++];
-            }
 
-            if (action == null || action.equals("EXIT")) {
-                return Status.CLOSEPROBLEM;
+    // Complete autonomy
+    public Status MySolveProblem() {
+        
+        // Vemos la goal que tenemos que hacer
+        String goal = E.getCurrentGoal();
+        
+        
+        if( goal.startsWith("MOVEIN") ){           
+            String[] ciudad = goal.split(" ");
+            for(int i = 0; i < ciudad.length; i++){
+                Info(ciudad[i]);
             }
-            if (!MyExecuteAction(actionString)) {
-                return Status.CLOSEPROBLEM;
+            
+            if( missionActive ){
+                this.myAssistedNavigation(ciudad[1]);
+                missionActive = false;
             }
             
-            return Status.SOLVEPROBLEM;
-            */
-            
-            
-            this.MyReadPerceptions();
-            this.myAssistedNavigation(ciudad[1]);
             if(G(E)){
                 Message("Done");
                 E.getCurrentMission().nextGoal();
+                missionActive = true;
                 if(E.getCurrentMission().isOver()){
                     return Status.CLOSEPROBLEM;
                 }else{
                     return Status.SOLVEPROBLEM;
-                }
-                
+                }             
             }
             if(!Ve(E)){
                 Alert("Ostia tio que no lo he enchufao");
                 return Status.CLOSEPROBLEM;
             }
 
-            action = Ag(E, A);
+            Choice action = this.Ag(E, A);
             if(action == null){
                 Alert("No sabe que hacer");
                 return Status.CLOSEPROBLEM;
             }
 
             this.MyExecuteAction(action.getName());
+            this.MyReadPerceptions();
             return Status.SOLVEPROBLEM;
-            
-        }else if (currentGoal.startsWith("LIST")){
-            String[] datos = currentGoal.split(" ");
+        }        
+        else if( goal.startsWith("LIST") ){
+            // Listamos las personas, SITH en este caso
+            String[] datos = goal.split(" ");
             Info("tipo -> " + datos[1]);
             return doQueryPeople(datos[1]);
             //return Status.CLOSEPROBLEM;
-        }else if (currentGoal.startsWith("REPORT")){
-            return Status.CLOSEPROBLEM;
-        }else{
+        }
+        
+        if( E.getCurrentMission().isOver() ){
             return Status.CLOSEPROBLEM;
         }
         
+        // Pasamos a la siguiente mision
+        //getEnvironment().getCurrentMission().nextGoal();
+        return Status.SOLVEPROBLEM;
     }
 
     // Just mark an X Y position as our next target. No more
@@ -269,7 +265,7 @@ public class ITT extends LARVAFirstAgent {
         this.LARVAsend(outbox);
         session = this.LARVAblockingReceive();
         getEnvironment().setExternalPerceptions(session.getContent());
-        return Status.CHECKIN.SOLVEPROBLEM;
+        return Status.SOLVEPROBLEM;
     }
 
     // 100% New method to execute an action
@@ -310,13 +306,12 @@ public class ITT extends LARVAFirstAgent {
         outbox = open.createReply();
         outbox.setContent("Cancel session " + sessionKey);
         Info("Closing problem " + problem + ", session " + sessionKey);
-        Info("PLAN: " + preplan);
         this.LARVAsend(outbox);
-        inbox = LARVAblockingReceive();
-        Info(problemManager + " says: " + inbox.getContent());
+        session = LARVAblockingReceive();
+        Info(problemManager + " says: " + session.getContent());
         
         // Destruir NPCs
-       // this.doDestroyNPC();
+        this.doDestroyNPC();
         
         return Status.CHECKOUT;
     }
@@ -435,7 +430,24 @@ public class ITT extends LARVAFirstAgent {
         }
     }
     
-    protected String chooseMission(){
+    /***********************************************************************/
+    
+    // Primera implementación autonav
+    
+    public double goAhead(Environment E, Choice a){
+        // El giro lo hacemos en base a la distancia en que me quedaría si 
+        // me muevo
+        if( a.getName().equals("MOVE")){
+            return U(S(E,a));
+        }
+        else{ // LEFT o RIGHT
+            return U(S(E,a),new Choice("MOVE"));
+        }        
+    }
+    /*************************************************************************/
+    
+    
+    /*protected String chooseMission(){
         Info("Choosing a mission");
         String m = "";
         if( getEnvironment().getAllMissions().length == 1 ){
@@ -446,7 +458,7 @@ public class ITT extends LARVAFirstAgent {
         }
         Info("Selected mission " + m);
         return m;        
-    }
+    }*/
     
     protected Status doQueryPeople( String type ){
         Info("Querying people " + type);
@@ -457,24 +469,7 @@ public class ITT extends LARVAFirstAgent {
         getEnvironment().setExternalPerceptions(session.getContent());
         Message("Found " + getEnvironment().getPeople().length + " " + type +
                 " in " + getEnvironment().getCurrentCity());
-        
-        E.getCurrentMission().nextGoal();
-        return Status.SOLVEPROBLEM;
-      /*  E.getCurrentMission().nextGoal();
-                if(E.getCurrentMission().isOver()){
-                    return Status.CLOSEPROBLEM;
-                }else{
-                    return Status.SOLVEPROBLEM;
-                }*/
-    }
-    
-    public Status SelectMission(){
-        String m = chooseMission();
-        if(m == null){
-            return Status.CLOSEPROBLEM;
-        }
-        getEnvironment().setCurrentMission(m);
-        return Status.SOLVEPROBLEM;
+        return Status.CLOSEPROBLEM;
     }
 
 }
