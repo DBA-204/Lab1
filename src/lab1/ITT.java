@@ -2,12 +2,14 @@ package lab1;
 
 import Environment.Environment;
 import agents.DEST;
+import agents.DroidShip;
 import agents.LARVAFirstAgent;
 import ai.Choice;
 import ai.DecisionSet;
 import geometry.Point3D;
 import jade.core.AID;
 import jade.lang.acl.ACLMessage;
+import java.util.ArrayList;
 import tools.emojis;
 import world.Perceptor;
 
@@ -18,7 +20,7 @@ public class ITT extends LARVAFirstAgent {
         START, CHECKIN, CHECKOUT, OPENPROBLEM, CLOSEPROBLEM, JOINSESSION, SOLVEPROBLEM, EXIT
     }
     protected Status myStatus;
-    protected String service = "PMANAGER", problem = "Dagobah.Sob1", // Dagobah.Apr1
+    protected String service = "PMANAGER", problem = "Endor.Sob2", // Dagobah.Apr1
             problemManager = "", content, sessionKey, sessionManager;
     protected String problems[], plan[], actions[];
     protected ACLMessage open, session;
@@ -32,6 +34,12 @@ public class ITT extends LARVAFirstAgent {
     
     // Booleano para controlar a que ciudad ir (si tiene ruta o no)
     protected boolean missionActive = true;
+    
+    //ArrayList para guardar el report que se mandará a la nave DEST
+    protected ArrayList<String> reportList = new ArrayList<String>();
+    protected String reportData = "";
+    
+    protected String sessionAlias;
 
     @Override
     public void setup() {
@@ -135,7 +143,10 @@ public class ITT extends LARVAFirstAgent {
         this.outbox = new ACLMessage();
         outbox.setSender(getAID());
         outbox.addReceiver(new AID(problemManager, AID.ISLOCALNAME));
-        outbox.setContent("Request open " + problem);
+        
+        sessionAlias = "RAULDURANRACERO";
+        Info("Request open " + problem + " alias " + sessionAlias);
+        outbox.setContent("Request open " + problem + " alias " + sessionAlias);
         this.LARVAsend(outbox);
         Info("Request opening problem " + problem + " to " + problemManager);
         open = LARVAblockingReceive();
@@ -167,12 +178,11 @@ public class ITT extends LARVAFirstAgent {
         
         // Leemos las ciudades
         cities = this.getEnvironment().getCityList();
-        Alert("Ciudades-> " + cities.length);
         
         // Pedimos join session
         this.DFAddMyServices(new String[]{"TYPE ITT"});
         outbox = session.createReply();
-        outbox.setContent("Request join session " + sessionKey + " in Dagobah");
+        outbox.setContent("Request join session " + sessionKey + " in GuildHouse");
         this.LARVAsend(outbox);
         session = this.LARVAblockingReceive();
         if (!session.getContent().startsWith("Confirm")) {
@@ -181,7 +191,11 @@ public class ITT extends LARVAFirstAgent {
         }
         
         // Lanzamos los NPC
+        Info("Preparing NPCs ...");
         this.doPrepareNPC(1,DEST.class);
+        
+        //Mostrar el droidship
+        DroidShip.Debug();
         
         // Vemos las misiones y seleccionamos la primera        
         outbox.setContent("Query missions session " + sessionKey);
@@ -195,13 +209,23 @@ public class ITT extends LARVAFirstAgent {
         
         return Status.SOLVEPROBLEM;
     }
+    
+    //Metodo para reutilizar el next goal e is over
+    public Status isProblemSolved(){
+        E.getCurrentMission().nextGoal();
+        missionActive = true;
+        if(E.getCurrentMission().isOver()){
+            return Status.CLOSEPROBLEM;
+        }else{
+            return Status.SOLVEPROBLEM;
+        }             
+    }
 
     // Complete autonomy
     public Status MySolveProblem() {
         
         // Vemos la goal que tenemos que hacer
         String goal = E.getCurrentGoal();
-        
         
         if( goal.startsWith("MOVEIN") ){           
             String[] ciudad = goal.split(" ");
@@ -215,14 +239,9 @@ public class ITT extends LARVAFirstAgent {
             }
             
             if(G(E)){
-                Message("Done");
-                E.getCurrentMission().nextGoal();
-                missionActive = true;
-                if(E.getCurrentMission().isOver()){
-                    return Status.CLOSEPROBLEM;
-                }else{
-                    return Status.SOLVEPROBLEM;
-                }             
+                Message("Ha llegado a " + ciudad[1]);
+                reportData += ";" + ciudad[1]; //REPORT;<city> ...
+                return isProblemSolved();
             }
             if(!Ve(E)){
                 Alert("Ostia tio que no lo he enchufao");
@@ -238,13 +257,33 @@ public class ITT extends LARVAFirstAgent {
             this.MyExecuteAction(action.getName());
             this.MyReadPerceptions();
             return Status.SOLVEPROBLEM;
-        }        
-        else if( goal.startsWith("LIST") ){
+        } else if( goal.startsWith("LIST") ){
             // Listamos las personas, SITH en este caso
             String[] datos = goal.split(" ");
             Info("tipo -> " + datos[1]);
             return doQueryPeople(datos[1]);
             //return Status.CLOSEPROBLEM;
+        } else if(goal.startsWith("REPORT")){
+            reportData += ";";
+            Info("REPORT" + reportData);
+            //Mandar el REPORT a un agente de tipo DEST
+            
+            ArrayList<String> npcs = this.DFGetAllProvidersOf("TYPE DEST");
+            Info("INFO NPCS: " + npcs.get(0));
+            //Creamos el mensaje
+            outbox = new ACLMessage();
+            outbox.setSender(this.getAID());
+            outbox.addReceiver(new AID(npcs.get(0), false));
+            
+            //Si solo hago el createReply, dice que es bad report
+            //outbox = session.createReply();
+            outbox.setContent("REPORT" + reportData);
+            this.LARVAsend(outbox);
+            //session = LARVAblockingReceive();
+
+            getEnvironment().setExternalPerceptions(session.getContent());
+            
+            return isProblemSolved();
         }
         
         if( E.getCurrentMission().isOver() ){
@@ -469,7 +508,13 @@ public class ITT extends LARVAFirstAgent {
         getEnvironment().setExternalPerceptions(session.getContent());
         Message("Found " + getEnvironment().getPeople().length + " " + type +
                 " in " + getEnvironment().getCurrentCity());
-        return Status.CLOSEPROBLEM;
+        
+        //Para completar la mision de REPORT debe devolver un string con 
+        //todas las listas que ha recogido en las ciudades visitadas
+        reportData += " " + type.toLowerCase() + " " 
+                + getEnvironment().getPeople().length;
+        
+        return isProblemSolved();
     }
 
 }
