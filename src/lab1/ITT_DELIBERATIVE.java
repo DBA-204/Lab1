@@ -19,7 +19,12 @@ public class ITT_DELIBERATIVE extends ITT_BASICSURROUND {
     Plan behaviour = null;
     Environment Ei, Ef;
     Choice a;
-
+    
+    @Override
+    public void setup(){
+        super.setup();
+    }
+    
     protected Plan AgPlan(Environment E, DecisionSet A) {
         Plan result;
         Ei = E.clone();

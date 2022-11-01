@@ -13,7 +13,10 @@ public class ITT_BASICSURROUND extends ITT_BASICAVOID {
     protected double distance, sigDistance;
     protected Point3D point, nextPoint;
     
-    
+    @Override
+    public void setup(){
+        super.setup();
+    }
         // In this ocasoin, we need to refactor proper function Ag()
     // just to remember the values explained above. The remaining is the same
     @Override

@@ -6,3 +6,6 @@ config/
 *.passport
 #Lib carpet
 dist/lib/
+/build/
+/dist/
+/nbproject/private/

@@ -40,6 +40,11 @@ public class ITT extends LARVAFirstAgent {
     protected String reportData = "";
     
     protected String sessionAlias;
+    
+    protected String muro, sigMuro;
+    protected double distance, sigDistance;
+    protected Point3D point, nextPoint;
+    
 
     @Override
     public void setup() {
@@ -61,17 +66,11 @@ public class ITT extends LARVAFirstAgent {
         
         // Desactivamos el sequence diagrams
         this.deactivateSequenceDiagrams();
+        
         this.enableDeepLARVAMonitoring();
     }
     
-    @Override
-    protected double U(Environment E, Choice a){
-        if(a.getName().equals("MOVE")){
-            return U(S(E,a));
-        } else {
-            return U(S(S(E,a), new Choice("MOVE")));
-        }
-    }
+   
 
     // 99% Recycled from AgentLARVAFull
     @Override
@@ -144,7 +143,7 @@ public class ITT extends LARVAFirstAgent {
         outbox.setSender(getAID());
         outbox.addReceiver(new AID(problemManager, AID.ISLOCALNAME));
         
-        sessionAlias = "RAULDURANRACERO";
+        sessionAlias = "JORDICONDEMOLINA";
         Info("Request open " + problem + " alias " + sessionAlias);
         outbox.setContent("Request open " + problem + " alias " + sessionAlias);
         this.LARVAsend(outbox);
@@ -166,6 +165,7 @@ public class ITT extends LARVAFirstAgent {
     }
     
     public Status MyJoinSession() {
+        this.resetAutoNAV();
         // Lo primero es consultar las ciudades
         Info("Querying CITIES");
         outbox = new ACLMessage();
@@ -279,7 +279,7 @@ public class ITT extends LARVAFirstAgent {
             //outbox = session.createReply();
             outbox.setContent("REPORT" + reportData);
             this.LARVAsend(outbox);
-            //session = LARVAblockingReceive();
+            session = LARVAblockingReceive();
 
             getEnvironment().setExternalPerceptions(session.getContent());
             
@@ -336,7 +336,7 @@ public class ITT extends LARVAFirstAgent {
             return false;
         }
         getEnvironment().setExternalPerceptions(session.getContent());
-        Info(this.easyPrintPerceptions());
+      //  Info(this.easyPrintPerceptions());
         return true;
     }
 
@@ -515,6 +515,156 @@ public class ITT extends LARVAFirstAgent {
                 + getEnvironment().getPeople().length;
         
         return isProblemSolved();
+    }
+    
+    @Override
+    protected Choice Ag(Environment E, DecisionSet A) {
+        if (G(E)) {
+            return null;
+        } else if (A.isEmpty()) {
+            return null;
+        } else {
+            A = Prioritize(E, A);
+            muro = sigMuro;
+            distance = sigDistance;
+            point = nextPoint;
+            return A.BestChoice();
+        }
+    }
+    
+    
+    // We need to refactor again Utility funciont to split it into three cases
+    // Two of them as in the previous version, and the new one to implement
+    // The left-wall heuristic (always turn to the right in front of an obstacle.
+    @Override
+    protected double U(Environment E, Choice a) {
+        if (muro.equals("RIGHT")) {
+            return goFollowWallRight(E, a);
+        }if (muro.equals("LEFT")) {
+            return goFollowWallLeft(E, a);
+        } else if (!E.isFreeFront()) {
+            return goAvoid(E, a);
+        } else {
+            return goAhead(E, a);
+        }
+    }
+
+    
+    // Refactor goAvoid, so that the first time we get to an obstacle, we remember 
+    // its position for further use
+ 
+    public double goAvoid(Environment E, Choice a) {
+        if (a.getName().equals("LEFT")) {
+            sigMuro = "RIGHT";
+            sigDistance = E.getDistance();
+            nextPoint = E.getGPS();
+            return Choice.ANY_VALUE;
+        }
+        if (a.getName().equals("RIGHT")) {
+            sigMuro = "LEFT";
+            sigDistance = E.getDistance();
+            nextPoint = E.getGPS();
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+    
+        // This is a new function, pleas read the other below and, then, continue reading this
+    // This is a Utility function to follow a wall until is very end. I keep
+    // always stuck to the wall. If the wall turns, I turn with it too.
+    // When I get to a better positoin (closer to the goal) that the one I memorized
+    // at the begining of the obstacle, then, stop surrounding and go back towards the goal.
+    public double goFollowWallLeft(Environment E, Choice a) {
+        if (E.isFreeFrontLeft()) {
+            return goTurnOnWallLeft(E, a);
+        } else if (E.isTargetFrontRight()
+                && E.isFreeFrontRight()
+                && E.getDistance() < point.planeDistanceTo(E.getTarget())) {
+            return goStopWallLeft(E, a);
+        } else if (E.isFreeFront()) {
+            return goKeepOnWall(E, a);
+        } else {
+            return goRevolveWallLeft(E, a);
+        }
+
+    }
+    
+    public double goFollowWallRight(Environment E, Choice a) {
+        if (E.isFreeFrontRight()) {
+            return goTurnOnWallRight(E, a);
+        } else if (E.isTargetFrontLeft()
+                && E.isFreeFrontLeft()
+                && E.getDistance() < point.planeDistanceTo(E.getTarget())) {
+            return goStopWallRight(E, a);
+        } else if (E.isFreeFront()) {
+            return goKeepOnWall(E, a);
+        } else {
+            return goRevolveWallRight(E, a);
+        }
+
+    }
+
+    // If I am still surrounding an obstacle and the front is free, just move to the front
+    public double goKeepOnWall(Environment E, Choice a) {
+        if (a.getName().equals("MOVE")) {
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+
+    // If I am sourronding an obstacle and the obstacle turns, I turn with it
+    public double goTurnOnWallLeft(Environment E, Choice a) {
+        if (a.getName().equals("LEFT")) {
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+
+    }
+    public double goTurnOnWallRight(Environment E, Choice a) {
+        if (a.getName().equals("RIGHT")) {
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+
+    }
+
+    // The same as before but the other turn
+    public double goRevolveWallLeft(Environment E, Choice a) {
+        if (a.getName().equals("RIGHT")) {
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+    
+    public double goRevolveWallRight(Environment E, Choice a) {
+        if (a.getName().equals("LEFT")) {
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+
+    // Very important. I I reacha a better position than the one memorized
+    // at the begining of the obstacle, then I stop surronding and go back towards the goal
+    public double goStopWallLeft(Environment E, Choice a) {
+        if (a.getName().equals("RIGHT")) {
+            this.resetAutoNAV();
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+    
+    public double goStopWallRight(Environment E, Choice a) {
+        if (a.getName().equals("LEFT")) {
+            this.resetAutoNAV();
+            return Choice.ANY_VALUE;
+        }
+        return Choice.MAX_UTILITY;
+    }
+    
+    public void resetAutoNAV() {
+        sigMuro = muro = "NONE";
+        sigDistance = distance = Choice.MAX_UTILITY;
+        nextPoint = point = null;
     }
 
 }
